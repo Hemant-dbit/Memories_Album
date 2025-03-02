@@ -8,6 +8,8 @@ export interface Photo {
 }
 
 export interface Album {
+  formatted_date: any;
+  captions: any;
   id: string;
   user_id: string;
   name: string;

@@ -10,6 +10,7 @@ import { toast } from "react-hot-toast";
 export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [albums, setAlbums] = useState<Album[]>([]);
+  const [filteredAlbums, setFilteredAlbums] = useState<Album[]>([]); // For filtered results
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState("");
@@ -35,23 +36,50 @@ export default function HomePage() {
 
       const { data: albumsData, error } = await supabase
         .from("albums")
-        .select("*, photos(url)")
+        .select("*, photos(url, caption)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setAlbums(
-        albumsData.map((album) => ({
-          ...album,
-          cover_photo_url: album.photos?.[0]?.url || null,
-        }))
-      );
+      const formattedAlbums = albumsData.map((album) => ({
+        ...album,
+        cover_photo_url: album.photos?.[0]?.url || null,
+        captions: album.photos
+          ?.map((photo: { caption: any }) => photo.caption)
+          .filter(Boolean), // Extract captions
+        formatted_date: new Date(album.created_at).toISOString().split("T")[0], // Normalize date to "YYYY-MM-DD"
+      }));
+      setAlbums(formattedAlbums);
+      setFilteredAlbums(formattedAlbums); // Initialize filtered albums with all albums
     } catch (error) {
       console.error("Error fetching albums:", error);
       toast.error("Failed to load albums");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearch = (query: string) => {
+    const lowercasedQuery = query.toLowerCase();
+
+    const filtered = albums.filter((album) => {
+      // Check if the album name matches the query
+      const nameMatch = album.name.toLowerCase().includes(lowercasedQuery);
+
+      // Check if any photo caption in the album matches the query
+      const captionMatch = album.captions?.some((caption: string) =>
+        caption.toLowerCase().includes(lowercasedQuery)
+      );
+
+      // Check if the album's creation date matches the query
+      const dateMatch = album.formatted_date
+        .toLowerCase()
+        .includes(lowercasedQuery);
+
+      return nameMatch || captionMatch || dateMatch;
+    });
+
+    setFilteredAlbums(filtered);
   };
 
   const handleCreateAlbum = async () => {
@@ -101,9 +129,13 @@ export default function HomePage() {
         <div className="relative mb-6">
           <input
             type="text"
-            placeholder="Search photos by date or caption..."
+            placeholder="Search albums by name, caption, or date..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              const query = e.target.value;
+              setSearchQuery(query);
+              handleSearch(query); // Trigger search on input change
+            }}
             className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
           />
           <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
@@ -124,11 +156,11 @@ export default function HomePage() {
 
         {loading ? (
           <div className="text-center py-8">Loading albums...</div>
-        ) : albums.length === 0 ? (
+        ) : filteredAlbums.length === 0 ? (
           <div className="text-center text-gray-500">No albums found.</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {albums.map((album) => (
+            {filteredAlbums.map((album) => (
               <Link
                 key={album.id}
                 to={`/album/${album.id}`}
@@ -151,6 +183,9 @@ export default function HomePage() {
                   <h3 className="text-lg font-medium text-gray-900">
                     {album.name}
                   </h3>
+                  <p className="text-sm text-gray-500">
+                    Created: {new Date(album.created_at).toLocaleDateString()}
+                  </p>
                 </div>
               </Link>
             ))}
